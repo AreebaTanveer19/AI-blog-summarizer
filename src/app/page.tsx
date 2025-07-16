@@ -1,7 +1,7 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Globe, Languages } from "lucide-react";
+import { Loader2, Globe, Copy } from "lucide-react";
 import { supabase } from './supabaseClient';
 import Confetti from "react-confetti";
 
@@ -12,12 +12,24 @@ export default function Home() {
   const [summary, setSummary] = useState<{ english: string; urdu: string } | null>(null);
   const [showConfetti, setShowConfetti] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  // Remove history state and useEffect
-  // TODO: Replace with your Supabase client import and setup
-  // import { createClient } from '@supabase/supabase-js';
-  // const supabase = createClient('SUPABASE_URL', 'SUPABASE_ANON_KEY');
+  
 
-  // Remove AnimatePresence block that displays history
+  // Helper to retry fetching summary from Supabase
+  async function fetchSummaryWithRetry(url: string, retries = 5, delay = 1000) {
+    for (let i = 0; i < retries; i++) {
+      const { data, error } = await supabase
+        .from('summaries')
+        .select('*')
+        .eq('url', url)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!error && data && data.length > 0) {
+        return data[0];
+      }
+      await new Promise(res => setTimeout(res, delay));
+    }
+    return null;
+  }
 
   const handleSummarise = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,20 +44,14 @@ export default function Home() {
         body: JSON.stringify({ url }),
       });
       if (!res.ok) throw new Error("Failed to summarise blog");
-      // Wait for n8n to insert into Supabase, then fetch from Supabase
-      const { data, error } = await supabase
-        .from('summaries')
-        .select('*')
-        .eq('url', url)
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (!error && data && data.length > 0) {
+
+      // Retry fetching the summary from Supabase
+      const summaryData = await fetchSummaryWithRetry(url, 5, 1000);
+      if (summaryData) {
         setSummary({
-          english: data[0].summary_en,
-          urdu: data[0].summary_urdu,
+          english: summaryData.summary_en,
+          urdu: summaryData.summary_urdu,
         });
-        setShowConfetti(true);
-        setTimeout(() => setShowConfetti(false), 2000);
       } else {
         setError("Summary not found in database.");
       }
@@ -58,6 +64,10 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
   };
 
   return (
@@ -120,31 +130,40 @@ export default function Home() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="mt-6 w-full grid grid-cols-1 md:grid-cols-2 gap-6"
+              className="mt-8 w-full flex justify-center"
             >
               <motion.div
-                whileHover={{ scale: 1.03 }}
-                className="bg-gradient-to-br from-blue-100/80 to-purple-100/80 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-6 shadow-lg flex flex-col gap-2 border border-gray-200 dark:border-gray-800"
+                whileHover={{ scale: 1.03, boxShadow: '0 4px 24px 0 rgba(80, 80, 200, 0.10)' }}
+                className="w-full max-w-2xl bg-white/90 dark:bg-gray-900/90 rounded-3xl p-8 shadow-xl border border-gray-200 dark:border-gray-800 flex flex-col gap-8 transition-all"
               >
-                <div className="flex items-center gap-2 mb-2">
-                  <Languages className="text-blue-500" />
-                  <span className="font-bold text-xl">English</span>
+                {/* English Summary */}
+                <div>
+                  <h2 className="font-bold text-2xl text-blue-700 dark:text-blue-300 mb-2">English Summary</h2>
+                  <button
+                    aria-label="Copy English summary"
+                    onClick={() => copyToClipboard(summary.english)}
+                    className="ml-auto p-2 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900 transition self-end mb-2"
+                  >
+                    <Copy className="w-5 h-5 text-blue-500" />
+                  </button>
+                  <p className="text-gray-800 dark:text-gray-100 text-lg leading-relaxed whitespace-pre-line font-sans">
+                    {summary.english}
+                  </p>
                 </div>
-                <p className="text-gray-800 dark:text-gray-100 text-lg whitespace-pre-line font-sans">
-                  {summary.english}
-                </p>
-              </motion.div>
-              <motion.div
-                whileHover={{ scale: 1.03 }}
-                className="bg-gradient-to-br from-pink-100/80 to-purple-100/80 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-6 shadow-lg flex flex-col gap-2 border border-gray-200 dark:border-gray-800"
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Languages className="text-pink-500" />
-                  <span className="font-bold text-xl">Urdu</span>
+                {/* Urdu Summary */}
+                <div>
+                  <h2 className="font-bold text-2xl text-pink-700 dark:text-pink-300 mb-2">Urdu Summary</h2>
+                  <button
+                    aria-label="Copy Urdu summary"
+                    onClick={() => copyToClipboard(summary.urdu)}
+                    className="ml-auto p-2 rounded-full hover:bg-pink-100 dark:hover:bg-pink-900 transition self-end mb-2"
+                  >
+                    <Copy className="w-5 h-5 text-pink-500" />
+                  </button>
+                  <p className="text-gray-800 dark:text-gray-100 text-lg leading-relaxed whitespace-pre-line font-noto">
+                    {summary.urdu}
+                  </p>
                 </div>
-                <p className="text-gray-800 dark:text-gray-100 text-lg whitespace-pre-line font-noto">
-                  {summary.urdu}
-                </p>
               </motion.div>
             </motion.div>
           )}
